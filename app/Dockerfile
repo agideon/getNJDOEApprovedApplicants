@@ -34,7 +34,7 @@ WORKDIR /app
 
 RUN \
     pip install  --upgrade pip \
-    && pip install pipenv \
+    && pip install pipenv mechanicalsoup \
     && pip freeze  > /app/requirements.txt \
     && pipenv lock \
     && pipenv requirements > /app/requirements.pipenv.txt

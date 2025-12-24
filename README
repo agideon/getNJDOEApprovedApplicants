@@ -1,0 +1,14 @@
+This is a utility to acquire information about recently approved applicants
+who have passed the New Jersey's Department of Education's background check.
+
+Really, this is just a proof of concept.
+
+The container is started:
+
+  docker compose --ansi never up --build
+
+and then the utility is run:
+
+  docker exec -it background-check-app bin/testGetForDate.0.py --days 10 --county cc --district dddd
+
+to list approvals up to ten days ago where the list is in JSON.
