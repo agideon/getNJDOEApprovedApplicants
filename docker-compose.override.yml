@@ -1,0 +1,25 @@
+services:
+  app:
+    volumes:
+      # These are mounted from the host so, for development, one can
+      # simply edit these are re-run w/o having to rebuild a container
+      # image.  Note that the Dockerfile is copying these into the
+      # image, but this specification of volumes in the .override.
+      # file is hiding the copied content with this mounted content.
+      - ${PWD}/app/bin:/app/bin
+      - ${PWD}/app/lib:/app/lib
+
+  lock-requirements:
+    build:
+      context: app
+    container_name: background-check-lock-requirements
+    restart: no
+    image: background-check-app
+    env_file:
+      - path: /.env
+        required: false
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
+    volumes:
+      - ${PWD}/app/pip:/app/pip
+    command: /bin/sh -c 'cp -p requirements.txt requirements.pipenv.txt Pipfile.lock Pipfile /app/pip'
