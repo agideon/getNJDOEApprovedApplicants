@@ -92,7 +92,11 @@ def main() -> None:
     all_dates = get_last_n_dates(clioptions.daysAgo[0])
     for date_str in all_dates:
         applicants = fetch_applicant_report(session, clioptions.county[0], clioptions.district[0], date_str)
-        applicants = [ applicant for applicant in applicants if (applicant['jobposition'].casefold() == "VOLUNTEER".casefold()) or ("SUBSTITUTE".casefold() in applicant['jobposition'].casefold()) ]
+        applicants = [
+            applicant for applicant in applicants
+            if (applicant['jobposition'].casefold() == "VOLUNTEER".casefold())
+              or ("SUBSTITUTE".casefold() in applicant['jobposition'].casefold())
+        ]
         if isinstance(applicants, list) and len(applicants) > 0:
             all_applicants.extend(applicants)
             
