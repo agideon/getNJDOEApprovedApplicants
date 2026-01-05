@@ -92,15 +92,19 @@ def main() -> None:
     all_dates = get_last_n_dates(clioptions.daysAgo[0])
     for date_str in all_dates:
         applicants = fetch_applicant_report(session, clioptions.county[0], clioptions.district[0], date_str)
+        applicants = [ applicant for applicant in applicants if (applicant['jobposition'].casefold() == "VOLUNTEER".casefold()) or ("SUBSTITUTE".casefold() in applicant['jobposition'].casefold()) ]
         if isinstance(applicants, list) and len(applicants) > 0:
             all_applicants.extend(applicants)
             
             
     print(f"--- Found {len(all_applicants)} Applicants over last {clioptions.daysAgo[0]} days ---")
     # Using json.dumps for a "pretty-print" view of the list
-    print(json.dumps(all_applicants, indent=4))
+    # print(json.dumps(all_applicants, indent=4))
 
-
+    fields = ['lastname', 'firstname', 'midInit', 'approvaldate2', 'jobposition'];
+    for applicant in all_applicants:
+        line = ",".join([ (applicant[f] or '').replace(' 00:00:00','') for f in fields])
+        print(f"{line}")
 
 
 if __name__ == "__main__":
