@@ -6,8 +6,11 @@ It supports a PTAC effort to bring more volunteers into the buildings.
 
 The `app` service is started via:
 ```
-podman compose --ansi never up -d --build
+PWD=$HOST_PWD podman compose up -d --build
 ```
+where `HOST_PWD` is the host-side project root (set via `-e HOST_PWD=$PWD` on the Claude container launch).
+This is necessary because `podman compose` runs on the host daemon and resolves volume paths against the
+host filesystem — inside the Claude container `PWD=/workspace`, which doesn't exist on the host.
 and reports on the latest approvals by the state are generated via
 commands such as:
 ```
