@@ -13,7 +13,7 @@ services:
     build:
       context: app
     container_name: background-check-lock-requirements
-    restart: no
+    restart: "no"
     image: background-check-app
     env_file:
       - path: /.env
