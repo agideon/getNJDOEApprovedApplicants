@@ -43,7 +43,7 @@ FROM pythonbase2 AS appbase
 
 WORKDIR /app
 COPY --chown=u0:g0 bin  /app/bin/
-COPY --chown=u0:g0 lib /app/lib/
+#COPY --chown=u0:g0 lib /app/lib/
 
 FROM appbase AS app
 
