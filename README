@@ -14,6 +14,10 @@ The needed container is started:
 
   podman compose --ansi never up --build
 
+(this is for running directly at a host terminal; if you're working through a
+Claude Code session instead, see the different invocation documented in CLAUDE.md,
+needed there because Claude's own $PWD/$HOME/$XDG_RUNTIME_DIR aren't the host's)
+
 and then the utility is run:
 
   podman exec -it background-check-app bin/testGetForDate.0.py --days 10 --county cc --district dddd

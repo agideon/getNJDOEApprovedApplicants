@@ -6,8 +6,26 @@ services:
       # image.  Note that the Dockerfile is copying these into the
       # image, but this specification of volumes in the .override.
       # file is hiding the copied content with this mounted content.
-      - ${PWD}/app/bin:/app/bin:z
-      - ${PWD}/app/lib:/app/lib:z
+      - ${PWD:-.}/app/bin:/app/bin:z
+      # Like ${PWD} above, ~ and ${XDG_RUNTIME_DIR} are interpolated in
+      # whatever environment `podman compose` actually runs in. Left as
+      # invoked from inside the Claude container's own environment
+      # (HOME=/root, no XDG_RUNTIME_DIR set), they'd resolve to
+      # /root/.claude* and /podman/podman.sock, neither of which exist
+      # on the host. The invocation itself must remap them to host
+      # values (HOME=$HOST_HOME XDG_RUNTIME_DIR=$HOST_XDG_RUNTIME_DIR),
+      # exactly like the existing `PWD=$HOST_PWD` prefix does for ${PWD}
+      # above — see CLAUDE.md for the full command.
+      - ~/.claude.json:/home/u0/.claude.json:z
+      - ~/.claude:/home/u0/.claude:Z
+      - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock:z
+    environment:
+      - COMPOSE_PARAM_HOST_IMAGE_VOLUMES=true
+      - TZ=${TZ:-America/New_York}
+      - HOST_PWD=${HOST_PWD}
+      - CLAUDE_PROJECT_NAME=${CLAUDE_PROJECT_NAME}
+
+
 
   lock-requirements:
     build:
@@ -20,6 +38,12 @@ services:
         required: false
     stdin_open: true # docker run -i
     tty: true        # docker run -t
+    # The image's default USER (u0, non-root) can't write into app/pip
+    # on the host, which is root-owned; rootless Podman's UID mapping
+    # doesn't grant it access. This container only does a local `cp` of
+    # already-generated files with no untrusted input, so running it as
+    # root is low-risk and simpler than rejiggering host file ownership.
+    user: root
     volumes:
-      - ${PWD}/app/pip:/app/pip:z
+      - ${PWD:-.}/app/pip:/app/pip:z
     command: /bin/sh -c 'cp -p requirements.txt requirements.pipenv.txt Pipfile.lock Pipfile /app/pip'
