@@ -11,3 +11,21 @@ services:
     stdin_open: true # docker run -i
     tty: true        # docker run -t
 
+
+#    volumes:
+      # Primary workspace mount at the stable container-internal path.  This
+      # path drives Claude Code's project directory name in ~/.claude/projects/
+      # (see working_dir comment above).
+#      - ${DEV_WORKSPACE:-~/Projects/Development}:/workspace/${CLAUDE_PROJECT_NAME:-unknown-project}:Z
+      # Secondary workspace mount at the host-side path.  The same host
+      # directory is intentionally mounted twice at two different container
+      # paths.  This is required for `cd $HOST_PWD && podman compose`: compose
+      # resolves ${PWD} substitutions and relative volume paths via getcwd(),
+      # and that result must be a host-side path for the host Podman daemon to
+      # locate the files.  Setting the shell variable PWD= is not sufficient
+      # because getcwd() reads the kernel CWD, not the $PWD env var.
+      # The fallback /workspace-host is a benign placeholder when HOST_PWD is
+      # not set (e.g. older launch scripts); it is an inaccessible, unused path.
+#      - ${DEV_WORKSPACE:-~/Projects/Development}:${HOST_PWD:-/workspace-host}:z
+
+    
