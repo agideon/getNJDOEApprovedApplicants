@@ -38,11 +38,17 @@ change and test code w/o rebuilding the container.  The application's Dockerfile
 does do the proper COPYing to create a standalone/deployable stack, but I don't
 believe I've tested that yet (so some needed components may still be missing).
 
-There's also a service in `docker-compose.override.yml` called
-`lock-requirements` which will store the latest requirements used to
-build the container image.  These can be stored and used later, if
-needed, to revert to previous versions of requirements if future
-versions cause problems.
+`app/pip/Pipfile` and `app/pip/Pipfile.lock` are the source of truth for the app's Python
+dependencies; the `app` image installs exactly what's pinned in `Pipfile.lock` (see
+`app/Dockerfile`). To add/remove/re-pin a package, edit `Pipfile`, then re-lock it via the
+`update-requirements` service in `docker-compose.override.yml` — kept out of normal `up`/`up -d
+--build` behind a Compose profile, since it's only needed on the rare occasion dependencies
+actually change:
+```
+podman compose --profile update-requirements run --rm update-requirements
+```
+This writes a new `Pipfile.lock` back to `app/pip/`, which should be committed like any other
+source change.
 
 
 

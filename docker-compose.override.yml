@@ -27,23 +27,32 @@ services:
 
 
 
-  lock-requirements:
+  # Re-locks app/pip/Pipfile.lock against app/pip/Pipfile. Only needed
+  # when adding/removing/re-pinning a package (edit Pipfile first) or to
+  # pick up newer versions within Pipfile's existing constraints.
+  # `profiles:` keeps this out of a bare `up`/`up -d --build`; run it
+  # explicitly with:
+  #   podman compose --profile update-requirements run --rm update-requirements
+  # (explicitly naming a service starts it regardless of profile, so
+  # `--profile` isn't strictly required here, but it documents intent
+  # and is cheap insurance against a future plain `up` picking it up.)
+  update-requirements:
     build:
       context: app
-    container_name: background-check-lock-requirements
+      # Only needs pipenv itself, not the app's own code/dependencies —
+      # see the pipenvbase comment in app/Dockerfile.
+      target: pipenvbase
+    container_name: background-check-update-requirements
     restart: "no"
-    image: background-check-app
-    env_file:
-      - path: /.env
-        required: false
-    stdin_open: true # docker run -i
-    tty: true        # docker run -t
-    # The image's default USER (u0, non-root) can't write into app/pip
-    # on the host, which is root-owned; rootless Podman's UID mapping
-    # doesn't grant it access. This container only does a local `cp` of
-    # already-generated files with no untrusted input, so running it as
-    # root is low-risk and simpler than rejiggering host file ownership.
+    profiles: ["update-requirements"]
+    # pipenv lock writes Pipfile.lock back into the bind-mounted
+    # app/pip directory below, which is root-owned on the host; the
+    # image's default USER (u0, non-root) has no write access there
+    # under rootless Podman's UID mapping. Same tradeoff as documented
+    # for lock-requirements previously: no untrusted input here, so
+    # root is simpler than rejiggering host file ownership.
     user: root
+    working_dir: /app/pip
     volumes:
       - ${PWD:-.}/app/pip:/app/pip:z
-    command: /bin/sh -c 'cp -p requirements.txt requirements.pipenv.txt Pipfile.lock Pipfile /app/pip'
+    command: pipenv lock
