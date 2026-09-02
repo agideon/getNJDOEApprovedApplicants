@@ -7,6 +7,11 @@ services:
       # image, but this specification of volumes in the .override.
       # file is hiding the copied content with this mounted content.
       - ${PWD:-.}/app/bin:/app/bin:z
+      - ${PWD:-.}/app/lib:/app/lib:z
+      # The service-account key bin/matchApprovalsToSheet.py needs to
+      # read/write the volunteer spreadsheet. Read-only: this container
+      # should never need to modify its own credential file.
+      - ${PWD:-.}/app/secrets/google-service-account.json:/app/secrets/google-service-account.json:z,ro
       # Like ${PWD} above, ~ and ${XDG_RUNTIME_DIR} are interpolated in
       # whatever environment `podman compose` actually runs in. Left as
       # invoked from inside the Claude container's own environment

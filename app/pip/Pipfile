@@ -12,6 +12,11 @@ name = "pypi"
 # Dockerfile that pip-installed pipenv and mechanicalsoup together into
 # the same environment and froze the whole thing as one flat list.
 mechanicalsoup = "==1.4.0"
+# For bin/matchApprovalsToSheet.py: reads/writes a Google Sheet via a
+# service-account credential (see app/secrets/README.md and CLAUDE.md).
+# Pulls in google-auth (and its small transitive deps) rather than the
+# much heavier full google-api-python-client stack.
+gspread = "*"
 
 [dev-packages]
 

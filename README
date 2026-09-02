@@ -27,6 +27,11 @@ believe that this is being used to update a spreadsheet for now.
 JSON-generating code remains, and an CLI option could be added to
 toggle between formats.
 
+There's also bin/matchApprovalsToSheet.py, which cross-references a Google
+Sheet of volunteers against these NJDOE approvals directly and writes the
+result back into the sheet, instead of updating it by hand from the CSV
+above.  See CLAUDE.md for setup and usage.
+
 
 
 To ease development, this does a little trickery in docker-compose.override.yml.

@@ -1,2 +1,10 @@
 *~
 
+# Google API credentials: never commit real key material. app/secrets/
+# holds locally-provided keys (service-account JSON, etc.) that get
+# bind-mounted into the container; only the placeholder README stays
+# tracked so the directory's purpose is discoverable.
+client_secret_*.json
+app/secrets/*
+!app/secrets/README.md
+

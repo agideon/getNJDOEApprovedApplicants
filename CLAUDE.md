@@ -22,8 +22,8 @@ This remapping is only needed when the command runs from inside a Claude Code se
 working directly at a real host terminal (not through Claude) doesn't need any of this — `$PWD`,
 `$HOME`, and `$XDG_RUNTIME_DIR` are already correct there, so the plain `podman compose --ansi never
 up --build` documented in `README` is what applies.
-and reports on the latest approvals by the state are generated via
-commands such as:
+
+Reports on the latest approvals by the state are generated via commands such as:
 ```
 podman exec -it background-check-app bin/testGetForDate.0.py --days 20 --county 13 --district 3310
 ```
@@ -49,6 +49,50 @@ podman compose --profile update-requirements run --rm update-requirements
 ```
 This writes a new `Pipfile.lock` back to `app/pip/`, which should be committed like any other
 source change.
+
+Shared NJDOE fetch/filter logic lives in `app/lib/njdoe.py` (a dev-mounted, non-installed module —
+each `bin/*.py` script does `sys.path.insert(0, ...)` to find it, since the scripts are run directly
+via their `#!/usr/local/bin/python` shebang, not as an installed package). `bin/testGetForDate.0.py`
+and `bin/matchApprovalsToSheet.py` both build on it.
+
+## Cross-referencing the volunteer spreadsheet (`bin/matchApprovalsToSheet.py`)
+
+Identifies which people on a Google Sheet of PTAC volunteers have a given NJDOE approval (job
+position defaults to `SUBSTITUTE TEACHER`) and writes the result back into the sheet:
+```
+podman exec -it background-check-app bin/matchApprovalsToSheet.py --days 30 --county 13 --district 3310 --sheet-id <sheet-id>
+```
+- Matches on `YOUR FULL NAME: - First Name` / `YOUR FULL NAME: - Last Name` by default — **not**
+  the sheet's `Name - First Name` / `Name - Last Name` columns, which are the volunteer's emergency
+  contact, not the volunteer. Override with `--first-name-column`/`--last-name-column`, or
+  `--full-name-column` for a single combined-name field, if pointed at a differently-shaped sheet.
+- Adds a new "NJDOE ... Approval Date" column (creating it once, on first run, along with extending
+  whichever row-1 banner text trails into blank cells immediately before it) rather than writing
+  into any of the sheet's existing HR/PTAC-tracking columns — deliberately kept as a separate
+  automated column so it can't be confused with anything entered by hand.
+- Never blanks/overwrites an existing match just because a later, narrower `--days` window didn't
+  re-find it — absence of evidence in a limited lookback window isn't evidence of absence. Re-running
+  with a wider window (or on a later day, as more NJDOE history accumulates) can only add matches,
+  never remove one already recorded.
+- If more than one sheet row shares the same normalized name, every one of them gets
+  `AMBIGUOUS - multiple sheet rows share this name, needs manual review` instead of a guessed match.
+- `--sheet-id` defaults to the production PTAC sheet; pass a throwaway copy's ID while testing
+  changes to this script.
+
+### One-time Google Cloud setup (manual — needs a browser/Google account, can't be automated)
+1. In Google Cloud Console, enable the **Google Sheets API** for the project (Drive API isn't
+   needed — the script opens the sheet by its known ID via `open_by_key`, which only calls the
+   Sheets API directly).
+2. Create a **Service Account** (Sheets access is controlled entirely via the sheet's own Share
+   dialog, not GCP IAM — no project role needs to be granted to it).
+3. Create and download a **JSON key** for it.
+4. **Share the target spreadsheet** with the service account's `client_email` (found in the
+   downloaded JSON) as **Editor** — the script needs to write back the approval-date column, not
+   just read.
+5. Save the key as `app/secrets/google-service-account.json` (see `app/secrets/README.md`) and
+   make sure it's at least group/world-**readable** on the host (`chmod 644`) — downloaded keys are
+   often owner-only (`0600`), which would be unreadable by the container's non-root `u0` user once
+   bind-mounted.
 
 
 

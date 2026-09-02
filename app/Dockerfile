@@ -62,7 +62,7 @@ RUN cd pip \
     && pip install -r /tmp/requirements.lock.txt
 
 COPY --chown=u0:g0 bin  /app/bin/
-#COPY --chown=u0:g0 lib /app/lib/
+COPY --chown=u0:g0 lib  /app/lib/
 
 FROM appbase AS app
 
