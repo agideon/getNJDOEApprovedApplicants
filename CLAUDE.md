@@ -66,16 +66,25 @@ podman exec -it background-check-app bin/matchApprovalsToSheet.py --days 30 --co
   the sheet's `Name - First Name` / `Name - Last Name` columns, which are the volunteer's emergency
   contact, not the volunteer. Override with `--first-name-column`/`--last-name-column`, or
   `--full-name-column` for a single combined-name field, if pointed at a differently-shaped sheet.
-- Adds a new "NJDOE ... Approval Date" column (creating it once, on first run, along with extending
-  whichever row-1 banner text trails into blank cells immediately before it) rather than writing
-  into any of the sheet's existing HR/PTAC-tracking columns — deliberately kept as a separate
-  automated column so it can't be confused with anything entered by hand.
-- Never blanks/overwrites an existing match just because a later, narrower `--days` window didn't
-  re-find it — absence of evidence in a limited lookback window isn't evidence of absence. Re-running
-  with a wider window (or on a later day, as more NJDOE history accumulates) can only add matches,
-  never remove one already recorded.
-- If more than one sheet row shares the same normalized name, every one of them gets
-  `AMBIGUOUS - multiple sheet rows share this name, needs manual review` instead of a guessed match.
+- Adds two new columns on first run (`--status-column`/`--review-column`, extending whichever row-1
+  banner text trails into blank cells immediately before them) rather than writing into any of the
+  sheet's existing HR/PTAC-tracking columns:
+  - **Status** (confirmed matches only): the NJDOE approval date, written only for a clean,
+    unambiguous, exact (punctuation/whitespace-insensitive) name match. Never blanked/overwritten
+    just because a later, narrower `--days` window didn't re-find it — absence of evidence in a
+    limited lookback window isn't evidence of absence. Re-running with a wider window (or on a later
+    day, as more NJDOE history accumulates) can only add matches, never remove one already recorded.
+  - **Needs Review** (candidates, not confirmed): two cases land here instead of Status —
+    (a) more than one sheet row shares the exact same name, or (b) a NJDOE and sheet name are a
+    known nickname pair (e.g. "Andy"/"Andrew" — via the `nicknames` package) rather than an exact
+    match. Nickname relationships are inherently ambiguous (a nickname can map to several formal
+    names) and aren't inferable from spelling the way typos are, so they're never auto-confirmed.
+    A reviewer resolves a flagged row by either entering the date in Status themselves (confirmed —
+    do this, don't just clear Review) or typing `no` in Review (rejected). Either way, once Review
+    is non-blank for a row, the script leaves that cell alone on future runs — a human owns it until
+    *they* clear it back to blank (clearing to fully blank means "pending" again, not "resolved").
+    Filter the sheet on Review containing the flag text (not just non-blank) to see the live queue,
+    since resolved-and-rejected rows hold `no`, not blank.
 - `--sheet-id` defaults to the production PTAC sheet; pass a throwaway copy's ID while testing
   changes to this script.
 

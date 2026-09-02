@@ -17,6 +17,13 @@ mechanicalsoup = "==1.4.0"
 # Pulls in google-auth (and its small transitive deps) rather than the
 # much heavier full google-api-python-client stack.
 gspread = "*"
+# For bin/matchApprovalsToSheet.py's nickname-aware matching (e.g. "Andy"
+# vs "Andrew"): a hand-curated nickname<->formal-name dataset. Nickname
+# relationships aren't inferable from spelling/edit-distance the way
+# typos are, and are inherently ambiguous (e.g. "Andy" could be short for
+# Andrea, Anderson, or Andrew) — hence a lookup table, and hence such
+# matches only ever get surfaced for manual review, never auto-confirmed.
+nicknames = "*"
 
 [dev-packages]
 

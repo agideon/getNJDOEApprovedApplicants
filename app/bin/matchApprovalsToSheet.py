@@ -2,12 +2,14 @@
 
 import argparse
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 import njdoe
 
 import gspread
+import nicknames
 
 # Editor access to the target sheet must already be granted to this
 # service account's client_email (see app/secrets/README.md, CLAUDE.md).
@@ -18,10 +20,35 @@ DEFAULT_CREDENTIALS = '/app/secrets/google-service-account.json'
 # against the real one.
 DEFAULT_SHEET_ID = '10Vez6xtFVzQzDQsW-Qt8bW3CJB3p2tuc80uzrui5mRA'
 DEFAULT_STATUS_COLUMN = 'NJDOE \nSubstitute Teacher \nApproval Date'
+DEFAULT_REVIEW_COLUMN = 'NJDOE \nNeeds \nReview'
 
 
 def normalize_name(name):
     return (name or '').strip().casefold()
+
+
+def strict_normalize_name(name):
+    """Strips ALL whitespace/punctuation, not just leading/trailing
+    whitespace, so e.g. "De Scisci" and "DeScisci" compare equal. Used
+    for the exact-match key; kept distinct from normalize_name (which
+    nickname lookups use — nicknames.py's dataset is keyed on plain
+    lowercase words) so a hyphenated/spaced first name still round-trips
+    sensibly through the nickname library.
+    """
+    return re.sub(r'[^a-z0-9]', '', normalize_name(name))
+
+
+def first_names_are_nickname_equivalent(namer, first_a, first_b):
+    """True if first_a/first_b are a known nickname<->formal-name pair in
+    either direction. Deliberately excludes exact equality (that's the
+    caller's already-handled high-confidence path) and unknown names
+    (namer returns an empty set, which correctly can't equal anything).
+    """
+    a, b = normalize_name(first_a), normalize_name(first_b)
+    if not a or not b or a == b:
+        return False
+    return (b in namer.nicknames_of(a) or a in namer.nicknames_of(b)
+            or b in namer.canonicals_of(a) or a in namer.canonicals_of(b))
 
 
 def col_letter(index_1_based):
@@ -42,12 +69,12 @@ def find_column(headers, name):
 
 
 def build_sheet_people(data_rows, first_row_num, first_idx, last_idx, full_idx):
-    """Maps normalized (first, last) name -> list of 1-based sheet row
-    numbers. A list (not a single row) because the sheet can contain
-    duplicate/similar names, which must be surfaced as ambiguous rather
-    than silently guessed at.
+    """Returns a list of {row_num, first, last, strict_key} dicts, one
+    per non-blank sheet row. A list rather than a name->row(s) dict since
+    matching now needs per-row (first, last) detail for nickname
+    comparison, not just an exact-key lookup.
     """
-    people = {}
+    people = []
     for offset, row in enumerate(data_rows):
         sheet_row_num = first_row_num + offset
         if full_idx is not None:
@@ -61,25 +88,44 @@ def build_sheet_people(data_rows, first_row_num, first_idx, last_idx, full_idx):
             last = row[last_idx] if last_idx < len(row) else ''
             if not first.strip() and not last.strip():
                 continue
-        key = (normalize_name(first), normalize_name(last))
-        people.setdefault(key, []).append(sheet_row_num)
+        people.append({
+            'row_num': sheet_row_num,
+            'first': first,
+            'last': last,
+            'strict_key': (strict_normalize_name(first), strict_normalize_name(last)),
+        })
     return people
 
 
-def ensure_status_column(worksheet, banner_row, header_row, headers, status_column_name):
-    """Returns the 0-based column index for status_column_name, adding it
-    (and a header cell) to the sheet if it doesn't already exist. When
-    adding, also extends whichever banner-row (row 1) text run trails off
-    into blank cells immediately before the new column, so the new
-    column visually joins that same banner grouping rather than sitting
-    under an unlabeled gap.
+def existing_cell_value(data_rows, first_row_num, row_num, col_idx):
+    """The pre-existing (as of the initial read, before this run's own
+    writes) value at (row_num, col_idx), or '' if that row is shorter
+    than col_idx — true both for genuinely blank cells and for columns
+    this run just created (which by definition no original row had).
     """
-    if status_column_name in headers:
-        return headers.index(status_column_name)
+    if col_idx is None:
+        return ''
+    row = data_rows[row_num - first_row_num]
+    return row[col_idx] if col_idx < len(row) else ''
+
+
+def ensure_column(worksheet, banner_row, header_row, headers, column_name):
+    """Returns the 0-based column index for column_name, adding it (and
+    a header cell) to the sheet if it doesn't already exist, and
+    appending it to `headers` in place so a second call for a different
+    new column computes the correct next index. When adding, also
+    extends whichever banner-row (row 1) text run trails off into blank
+    cells immediately before the new column, so the new column visually
+    joins that same banner grouping rather than sitting under an
+    unlabeled gap.
+    """
+    if column_name in headers:
+        return headers.index(column_name)
 
     new_col_idx = len(headers)  # 0-based
     worksheet.add_cols(1)
-    worksheet.update_cell(header_row, new_col_idx + 1, status_column_name)
+    worksheet.update_cell(header_row, new_col_idx + 1, column_name)
+    headers.append(column_name)
 
     banner_values = worksheet.row_values(banner_row)
     # Walk backward from the column immediately before the new one,
@@ -132,7 +178,12 @@ def main() -> None:
     cliparser.add_argument('--full-name-column', dest='fullNameColumn', default=None,
                             help='Use a single combined-name column instead of separate first/last columns')
     cliparser.add_argument('--status-column', dest='statusColumn', default=DEFAULT_STATUS_COLUMN,
-                            help='Column header to write the NJDOE approval date into (created if missing)')
+                            help='Column header to write a confirmed NJDOE approval date into (created if missing)')
+    cliparser.add_argument('--review-column', dest='reviewColumn', default=DEFAULT_REVIEW_COLUMN,
+                            help='Column header for candidate matches needing manual review (created if '
+                                 'missing). A reviewer clears the cell once confirmed as a match (and '
+                                 'records it in --status-column themselves), or enters "no" once confirmed '
+                                 'NOT a match, so it stops being re-flagged.')
     cliparser.add_argument('--credentials', dest='credentials', default=DEFAULT_CREDENTIALS,
                             help='Path to the Google service-account JSON key')
     cliparser.add_argument('--delay-seconds', dest='delaySeconds', type=float, default=0.0,
@@ -157,9 +208,15 @@ def main() -> None:
         last_idx = find_column(headers, clioptions.lastNameColumn)
         full_idx = None
 
+    first_data_row_num = clioptions.headerRow + 1
     data_rows = all_values[header_idx + 1:]
-    sheet_people = build_sheet_people(
-        data_rows, clioptions.headerRow + 1, first_idx, last_idx, full_idx)
+    sheet_people = build_sheet_people(data_rows, first_data_row_num, first_idx, last_idx, full_idx)
+
+    by_strict_key = {}
+    by_strict_last = {}
+    for person in sheet_people:
+        by_strict_key.setdefault(person['strict_key'], []).append(person['row_num'])
+        by_strict_last.setdefault(person['strict_key'][1], []).append(person)
 
     def matches_job_position(applicant):
         return applicant['jobposition'].casefold() == clioptions.jobPosition.casefold()
@@ -175,31 +232,74 @@ def main() -> None:
 
     print(f"--- Found {len(approved)} '{clioptions.jobPosition}' approval(s) over last {clioptions.daysAgo} days ---")
 
-    status_col_idx = ensure_status_column(
-        ws, clioptions.bannerRow, clioptions.headerRow, headers, clioptions.statusColumn)
+    status_col_idx = ensure_column(ws, clioptions.bannerRow, clioptions.headerRow, headers, clioptions.statusColumn)
+    review_col_idx = ensure_column(ws, clioptions.bannerRow, clioptions.headerRow, headers, clioptions.reviewColumn)
 
-    updates = []
+    status_updates = {}
+    review_candidates = []  # (row_num, note), not yet filtered against existing sheet state
+    namer = nicknames.NickNamer()
+
+    # Pass 1: exact (strictly-normalized) name matches.
+    unmatched = []
     for applicant in approved:
-        key = (normalize_name(applicant['firstname']), normalize_name(applicant['lastname']))
-        rows_matched = sheet_people.get(key, [])
-        if not rows_matched:
-            continue
-        if len(rows_matched) > 1:
-            for row_num in rows_matched:
-                updates.append((row_num, 'AMBIGUOUS - multiple sheet rows share this name, needs manual review'))
+        strict_key = (strict_normalize_name(applicant['firstname']), strict_normalize_name(applicant['lastname']))
+        exact_rows = by_strict_key.get(strict_key, [])
+        if len(exact_rows) == 1:
+            status_updates[exact_rows[0]] = njdoe.clean_field(applicant, 'approvaldate2')
+        elif len(exact_rows) > 1:
+            note = (f"Ambiguous: multiple sheet rows share the name "
+                    f"\"{applicant['firstname']} {applicant['lastname']}\" — "
+                    f"{clioptions.jobPosition} approved {njdoe.clean_field(applicant, 'approvaldate2')}")
+            review_candidates.extend((row_num, note) for row_num in exact_rows)
         else:
-            updates.append((rows_matched[0], njdoe.clean_field(applicant, 'approvaldate2')))
+            unmatched.append(applicant)
 
-    if updates:
+    # Pass 2: nickname-based candidates, only among applicants with no
+    # exact match at all (run after pass 1 completes so a row already
+    # exactly matched via a different applicant is correctly excluded
+    # below, regardless of iteration order).
+    for applicant in unmatched:
+        last_key = strict_normalize_name(applicant['lastname'])
+        for person in by_strict_last.get(last_key, []):
+            if person['row_num'] in status_updates:
+                continue
+            if first_names_are_nickname_equivalent(namer, applicant['firstname'], person['first']):
+                note = (f"Possible match: sheet has \"{person['first']} {person['last']}\", NJDOE has "
+                        f"\"{applicant['firstname']} {applicant['lastname']}\" — {clioptions.jobPosition} "
+                        f"approved {njdoe.clean_field(applicant, 'approvaldate2')}")
+                review_candidates.append((person['row_num'], note))
+
+    review_updates = {}
+    for row_num, note in review_candidates:
+        if row_num in status_updates:
+            continue  # confirmed elsewhere this run - no need to also flag
+        if existing_cell_value(data_rows, first_data_row_num, row_num, status_col_idx).strip():
+            continue  # already confirmed (automation or a reviewer) previously
+        if existing_cell_value(data_rows, first_data_row_num, row_num, review_col_idx).strip():
+            continue  # a reviewer already owns this cell (pending, or resolved with e.g. "no")
+        if row_num in review_updates:
+            review_updates[row_num] += '; ' + note
+        else:
+            review_updates[row_num] = note
+
+    batch_data = []
+    if status_updates:
         status_col_letter = col_letter(status_col_idx + 1)
-        batch_data = [
+        batch_data.extend(
             {'range': f'{status_col_letter}{row_num}', 'values': [[value]]}
-            for row_num, value in updates
-        ]
+            for row_num, value in status_updates.items())
+    if review_updates:
+        review_col_letter = col_letter(review_col_idx + 1)
+        batch_data.extend(
+            {'range': f'{review_col_letter}{row_num}', 'values': [[value]]}
+            for row_num, value in review_updates.items())
+
+    if batch_data:
         ws.batch_update(batch_data)
-        print(f"Updated {len(updates)} row(s) in column {status_col_letter} ('{clioptions.statusColumn}').")
+        print(f"Confirmed {len(status_updates)} row(s) in '{clioptions.statusColumn}'; "
+              f"flagged {len(review_updates)} row(s) in '{clioptions.reviewColumn}' for review.")
     else:
-        print("No matching rows found to update.")
+        print("No matching or candidate rows found to update.")
 
 
 if __name__ == "__main__":
