@@ -158,6 +158,13 @@ def main() -> None:
         description='Cross-reference a volunteer spreadsheet against NJDOE approvals, writing matches back into the sheet.')
     cliparser.add_argument('--days', dest='daysAgo', type=int, required=True,
                             help='Number of days back to go searching for approvals')
+    cliparser.add_argument('--start-days-back', dest='startDaysBack', type=int, default=0,
+                            help='Start the --days window this many days back instead of from today '
+                                 '(default: 0, i.e. starting today). E.g. --start-days-back 244 --days 30 '
+                                 'checks the 30-day window ending 244 days ago, rather than the most '
+                                 'recent 30 days. Mainly useful for testing against a known-busy period '
+                                 '(e.g. the start of the prior academic year) instead of waiting for '
+                                 'today\'s data to accumulate.')
     cliparser.add_argument('--county', dest='county', type=int, required=True,
                             help='County for which approvals will be checked')
     cliparser.add_argument('--district', dest='district', type=int, required=True,
@@ -350,12 +357,18 @@ def main() -> None:
             print("Flushed: nothing to update yet.")
 
     session = njdoe.build_session()
-    dates = njdoe.get_last_n_dates(clioptions.daysAgo)
+    dates = njdoe.get_last_n_dates(clioptions.daysAgo, start_days_back=clioptions.startDaysBack)
     roles_desc = ', '.join(clioptions.jobPositions)
+    if clioptions.startDaysBack:
+        window_desc = (f"{clioptions.startDaysBack} to "
+                        f"{clioptions.startDaysBack + clioptions.daysAgo - 1} days back")
+    else:
+        window_desc = f"last {clioptions.daysAgo} days"
     if not dates:
         print(f"--- Found 0 approval(s) for role(s) {roles_desc} (--days 0) ---")
         flush_to_sheet()
         return
+    print(f"--- Checking {window_desc} for role(s): {roles_desc} ---")
     chunk_size = clioptions.flushEveryDays or len(dates)  # one chunk = current/default behavior
     total_found = 0
     aborted = None

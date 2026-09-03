@@ -113,6 +113,12 @@ podman exec -it background-check-app bin/matchApprovalsToSheet.py --days 30 --co
   proceeds and an abort only risks losing what's been found since the last flush — confirmed via a
   simulated abort that whatever was found before it, including the partial chunk in progress, gets
   flushed before the script exits.
+- `--days` normally counts back from today. `--start-days-back N` shifts the whole window to start N
+  days back instead — e.g. `--start-days-back 244 --days 30` checks the 30-day window ending 244
+  days ago (confirmed: 244 days back from a given day lands on that day's New Year's Day), not the
+  most recent 30 days. Mainly for testing against a known-busy historical period (e.g. the start of
+  the prior academic year, when there's likely a large batch of real approvals to match against)
+  without waiting for equivalent volume to accumulate in current data.
 
 ### One-time Google Cloud setup (manual — needs a browser/Google account, can't be automated)
 1. In Google Cloud Console, enable the **Google Sheets API** for the project (Drive API isn't

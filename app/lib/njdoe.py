@@ -52,16 +52,19 @@ def build_session():
     return session
 
 
-def get_last_n_dates(n: int):
+def get_last_n_dates(n: int, start_days_back: int = 0):
     """
-    Returns a list of the last n dates (including today)
-    formatted as strings in 'mmddyyyy' format.
+    Returns a list of n dates, starting start_days_back days before today
+    (default 0, i.e. starting today) and going back from there, formatted
+    as strings in 'mmddyyyy' format. A nonzero start_days_back lets a
+    caller check a fixed historical window (e.g. a known-busy period)
+    instead of always being anchored to "today".
     """
     date_list = []
     today = datetime.now()
 
     for i in range(n):
-        target_date = today - timedelta(days=i)
+        target_date = today - timedelta(days=start_days_back + i)
         formatted_date = target_date.strftime("%m%d%Y")
         date_list.append(formatted_date)
 
