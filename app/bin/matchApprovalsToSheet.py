@@ -19,7 +19,8 @@ DEFAULT_CREDENTIALS = '/app/secrets/google-service-account.json'
 # instead, until this script's behavior has been confirmed safe to run
 # against the real one.
 DEFAULT_SHEET_ID = '10Vez6xtFVzQzDQsW-Qt8bW3CJB3p2tuc80uzrui5mRA'
-DEFAULT_STATUS_COLUMN = 'NJDOE \nSubstitute Teacher \nApproval Date'
+DEFAULT_STATUS_COLUMN = 'NJDOE \nApproval Date'
+DEFAULT_ROLES_COLUMN = 'NJDOE \nApproved \nRole(s)'
 DEFAULT_REVIEW_COLUMN = 'NJDOE \nNeeds \nReview'
 
 
@@ -161,8 +162,9 @@ def main() -> None:
                             help='County for which approvals will be checked')
     cliparser.add_argument('--district', dest='district', type=int, required=True,
                             help='District for which approvals will be checked')
-    cliparser.add_argument('--job-position', dest='jobPosition', default='SUBSTITUTE TEACHER',
-                            help='NJDOE job position to match on (default: SUBSTITUTE TEACHER)')
+    cliparser.add_argument('--job-position', dest='jobPositions', nargs='+', default=['SUBSTITUTE TEACHER'],
+                            help='One or more NJDOE job positions to match on '
+                                 '(default: SUBSTITUTE TEACHER)')
     cliparser.add_argument('--sheet-id', dest='sheetId', default=DEFAULT_SHEET_ID,
                             help='Google Sheet ID to read/update (default: the production PTAC sheet)')
     cliparser.add_argument('--worksheet-index', dest='worksheetIndex', type=int, default=0,
@@ -178,7 +180,12 @@ def main() -> None:
     cliparser.add_argument('--full-name-column', dest='fullNameColumn', default=None,
                             help='Use a single combined-name column instead of separate first/last columns')
     cliparser.add_argument('--status-column', dest='statusColumn', default=DEFAULT_STATUS_COLUMN,
-                            help='Column header to write a confirmed NJDOE approval date into (created if missing)')
+                            help='Column header to write a confirmed NJDOE approval date into (created if '
+                                 'missing). When a candidate has multiple qualifying approvals (different '
+                                 'roles and/or dates), only the most recent date is written here.')
+    cliparser.add_argument('--roles-column', dest='rolesColumn', default=DEFAULT_ROLES_COLUMN,
+                            help='Column header for the distinct --job-position role(s) a confirmed match '
+                                 'was actually approved for (created if missing)')
     cliparser.add_argument('--review-column', dest='reviewColumn', default=DEFAULT_REVIEW_COLUMN,
                             help='Column header for candidate matches needing manual review (created if '
                                  'missing). A reviewer clears the cell once confirmed as a match (and '
@@ -218,8 +225,10 @@ def main() -> None:
         by_strict_key.setdefault(person['strict_key'], []).append(person['row_num'])
         by_strict_last.setdefault(person['strict_key'][1], []).append(person)
 
+    target_positions = {jp.casefold() for jp in clioptions.jobPositions}
+
     def matches_job_position(applicant):
-        return applicant['jobposition'].casefold() == clioptions.jobPosition.casefold()
+        return applicant['jobposition'].casefold() in target_positions
 
     session = njdoe.build_session()
     dates = njdoe.get_last_n_dates(clioptions.daysAgo)
@@ -230,12 +239,19 @@ def main() -> None:
     except njdoe.FetchAborted as e:
         sys.exit(f"Aborted: {e}")
 
-    print(f"--- Found {len(approved)} '{clioptions.jobPosition}' approval(s) over last {clioptions.daysAgo} days ---")
+    roles_desc = ', '.join(clioptions.jobPositions)
+    print(f"--- Found {len(approved)} approval(s) over last {clioptions.daysAgo} days for role(s): {roles_desc} ---")
 
     status_col_idx = ensure_column(ws, clioptions.bannerRow, clioptions.headerRow, headers, clioptions.statusColumn)
+    roles_col_idx = ensure_column(ws, clioptions.bannerRow, clioptions.headerRow, headers, clioptions.rolesColumn)
     review_col_idx = ensure_column(ws, clioptions.bannerRow, clioptions.headerRow, headers, clioptions.reviewColumn)
 
-    status_updates = {}
+    # Row -> list of (date, role) for every exact match, since a person
+    # can have multiple qualifying approvals (different --job-position
+    # values and/or different dates); the status column then only shows
+    # the single most-recent date, but the roles column lists every
+    # distinct role found, not just the one tied to that latest date.
+    exact_matches_by_row = {}
     review_candidates = []  # (row_num, note), not yet filtered against existing sheet state
     namer = nicknames.NickNamer()
 
@@ -245,14 +261,24 @@ def main() -> None:
         strict_key = (strict_normalize_name(applicant['firstname']), strict_normalize_name(applicant['lastname']))
         exact_rows = by_strict_key.get(strict_key, [])
         if len(exact_rows) == 1:
-            status_updates[exact_rows[0]] = njdoe.clean_field(applicant, 'approvaldate2')
+            exact_matches_by_row.setdefault(exact_rows[0], []).append(
+                (njdoe.clean_field(applicant, 'approvaldate2'), applicant['jobposition']))
         elif len(exact_rows) > 1:
             note = (f"Ambiguous: multiple sheet rows share the name "
                     f"\"{applicant['firstname']} {applicant['lastname']}\" — "
-                    f"{clioptions.jobPosition} approved {njdoe.clean_field(applicant, 'approvaldate2')}")
+                    f"{applicant['jobposition']} approved {njdoe.clean_field(applicant, 'approvaldate2')}")
             review_candidates.extend((row_num, note) for row_num in exact_rows)
         else:
             unmatched.append(applicant)
+
+    status_updates = {}
+    roles_updates = {}
+    for row_num, matches in exact_matches_by_row.items():
+        # NJDOE's approvaldate2 is always zero-padded YYYY-MM-DD, so a
+        # plain string max() is already a correct date-max, with no need
+        # to parse it into an actual date object first.
+        status_updates[row_num] = max(date for date, _role in matches)
+        roles_updates[row_num] = ', '.join(sorted({role for _date, role in matches}))
 
     # Pass 2: nickname-based candidates, only among applicants with no
     # exact match at all (run after pass 1 completes so a row already
@@ -265,7 +291,7 @@ def main() -> None:
                 continue
             if first_names_are_nickname_equivalent(namer, applicant['firstname'], person['first']):
                 note = (f"Possible match: sheet has \"{person['first']} {person['last']}\", NJDOE has "
-                        f"\"{applicant['firstname']} {applicant['lastname']}\" — {clioptions.jobPosition} "
+                        f"\"{applicant['firstname']} {applicant['lastname']}\" — {applicant['jobposition']} "
                         f"approved {njdoe.clean_field(applicant, 'approvaldate2')}")
                 review_candidates.append((person['row_num'], note))
 
@@ -288,6 +314,11 @@ def main() -> None:
         batch_data.extend(
             {'range': f'{status_col_letter}{row_num}', 'values': [[value]]}
             for row_num, value in status_updates.items())
+    if roles_updates:
+        roles_col_letter = col_letter(roles_col_idx + 1)
+        batch_data.extend(
+            {'range': f'{roles_col_letter}{row_num}', 'values': [[value]]}
+            for row_num, value in roles_updates.items())
     if review_updates:
         review_col_letter = col_letter(review_col_idx + 1)
         batch_data.extend(
@@ -296,7 +327,7 @@ def main() -> None:
 
     if batch_data:
         ws.batch_update(batch_data)
-        print(f"Confirmed {len(status_updates)} row(s) in '{clioptions.statusColumn}'; "
+        print(f"Confirmed {len(status_updates)} row(s) in '{clioptions.statusColumn}'/'{clioptions.rolesColumn}'; "
               f"flagged {len(review_updates)} row(s) in '{clioptions.reviewColumn}' for review.")
     else:
         print("No matching or candidate rows found to update.")

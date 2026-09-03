@@ -57,23 +57,33 @@ and `bin/matchApprovalsToSheet.py` both build on it.
 
 ## Cross-referencing the volunteer spreadsheet (`bin/matchApprovalsToSheet.py`)
 
-Identifies which people on a Google Sheet of PTAC volunteers have a given NJDOE approval (job
-position defaults to `SUBSTITUTE TEACHER`) and writes the result back into the sheet:
+Identifies which people on a Google Sheet of PTAC volunteers have any of one or more given NJDOE
+approvals (job position(s) default to `SUBSTITUTE TEACHER`) and writes the result back into the
+sheet:
 ```
-podman exec -it background-check-app bin/matchApprovalsToSheet.py --days 30 --county 13 --district 3310 --sheet-id <sheet-id>
+podman exec -it background-check-app bin/matchApprovalsToSheet.py --days 30 --county 13 --district 3310 --sheet-id <sheet-id> --job-position "SUBSTITUTE TEACHER" "CLASSROOM TEACHER" "ADMINISTRATOR/SUPERVISOR"
 ```
 - Matches on `YOUR FULL NAME: - First Name` / `YOUR FULL NAME: - Last Name` by default — **not**
   the sheet's `Name - First Name` / `Name - Last Name` columns, which are the volunteer's emergency
   contact, not the volunteer. Override with `--first-name-column`/`--last-name-column`, or
   `--full-name-column` for a single combined-name field, if pointed at a differently-shaped sheet.
-- Adds two new columns on first run (`--status-column`/`--review-column`, extending whichever row-1
-  banner text trails into blank cells immediately before them) rather than writing into any of the
-  sheet's existing HR/PTAC-tracking columns:
-  - **Status** (confirmed matches only): the NJDOE approval date, written only for a clean,
-    unambiguous, exact (punctuation/whitespace-insensitive) name match. Never blanked/overwritten
-    just because a later, narrower `--days` window didn't re-find it — absence of evidence in a
-    limited lookback window isn't evidence of absence. Re-running with a wider window (or on a later
-    day, as more NJDOE history accumulates) can only add matches, never remove one already recorded.
+- Adds three new columns on first run (`--status-column`/`--roles-column`/`--review-column`,
+  extending whichever row-1 banner text trails into blank cells immediately before them) rather
+  than writing into any of the sheet's existing HR/PTAC-tracking columns:
+  - **Status** (confirmed matches only): an NJDOE approval date, written only for a clean,
+    unambiguous, exact (punctuation/whitespace-insensitive) name match. A candidate can have
+    multiple qualifying approvals — different `--job-position` roles and/or different dates — in
+    which case only the single most recent date is written here (NJDOE's date format sorts
+    correctly as a plain string, so no date parsing is needed to find the max). Never
+    blanked/overwritten just because a later, narrower `--days` window didn't re-find it — absence
+    of evidence in a limited lookback window isn't evidence of absence. Re-running with a wider
+    window (or on a later day, as more NJDOE history accumulates) can only add matches, never
+    remove one already recorded.
+  - **Roles** (confirmed matches only): every *distinct* role (from `--job-position`) the candidate
+    was found approved for anywhere in the lookback window — not just whichever role happens to be
+    tied to the single most-recent date in Status. E.g. someone approved as both Substitute Teacher
+    (an older date) and Classroom Teacher (the most recent date) shows `Status: <newer date>`,
+    `Roles: CLASSROOM TEACHER, SUBSTITUTE TEACHER`.
   - **Needs Review** (candidates, not confirmed): two cases land here instead of Status —
     (a) more than one sheet row shares the exact same name, or (b) a NJDOE and sheet name are a
     known nickname pair (e.g. "Andy"/"Andrew" — via the `nicknames` package) rather than an exact
