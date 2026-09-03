@@ -63,6 +63,14 @@ sheet:
 ```
 podman exec -it background-check-app bin/matchApprovalsToSheet.py --days 30 --county 13 --district 3310 --sheet-id <sheet-id> --job-position "SUBSTITUTE TEACHER" "CLASSROOM TEACHER" "ADMINISTRATOR/SUPERVISOR"
 ```
+- `--job-position` takes one or more values after a single flag (`--job-position "A" "B"`, **not**
+  `--job-position "A" --job-position "B"` — the latter silently keeps only the last one, since
+  argparse's `nargs='+'` replaces rather than accumulates across repeated flags). Each value matches
+  by case-insensitive **substring**, not exact equality — e.g. `--job-position "SUBSTITUTE"` matches
+  "SUBSTITUTE TEACHER", "SUBSTITUTE NURSE", "SUBSTITUTE CLERICAL", etc. all at once (confirmed
+  against live data: 21 SUBSTITUTE TEACHER + 1 SUBSTITUTE NURSE = 22 total for plain "SUBSTITUTE").
+  The Roles column still records each match's actual specific NJDOE job position text, not
+  whichever broader search term happened to match it.
 - Matches on `YOUR FULL NAME: - First Name` / `YOUR FULL NAME: - Last Name` by default — **not**
   the sheet's `Name - First Name` / `Name - Last Name` columns, which are the volunteer's emergency
   contact, not the volunteer. Override with `--first-name-column`/`--last-name-column`, or

@@ -163,8 +163,9 @@ def main() -> None:
     cliparser.add_argument('--district', dest='district', type=int, required=True,
                             help='District for which approvals will be checked')
     cliparser.add_argument('--job-position', dest='jobPositions', nargs='+', default=['SUBSTITUTE TEACHER'],
-                            help='One or more NJDOE job positions to match on '
-                                 '(default: SUBSTITUTE TEACHER)')
+                            help='One or more NJDOE job positions to match on. Matches by substring '
+                                 '(case-insensitive), not exact equality - e.g. "SUBSTITUTE" matches '
+                                 '"SUBSTITUTE TEACHER", "SUBSTITUTE NURSE", etc. (default: SUBSTITUTE TEACHER)')
     cliparser.add_argument('--sheet-id', dest='sheetId', default=DEFAULT_SHEET_ID,
                             help='Google Sheet ID to read/update (default: the production PTAC sheet)')
     cliparser.add_argument('--worksheet-index', dest='worksheetIndex', type=int, default=0,
@@ -232,10 +233,11 @@ def main() -> None:
         by_strict_key.setdefault(person['strict_key'], []).append(person['row_num'])
         by_strict_last.setdefault(person['strict_key'][1], []).append(person)
 
-    target_positions = {jp.casefold() for jp in clioptions.jobPositions}
+    target_positions = [jp.casefold() for jp in clioptions.jobPositions]
 
     def matches_job_position(applicant):
-        return applicant['jobposition'].casefold() in target_positions
+        job = applicant['jobposition'].casefold()
+        return any(target in job for target in target_positions)
 
     status_col_idx = ensure_column(ws, clioptions.bannerRow, clioptions.headerRow, headers, clioptions.statusColumn)
     roles_col_idx = ensure_column(ws, clioptions.bannerRow, clioptions.headerRow, headers, clioptions.rolesColumn)
