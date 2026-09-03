@@ -24,10 +24,14 @@ class BotProtectionBlocked(Exception):
 
 class FetchAborted(Exception):
     """Raised by fetch_and_filter_applicants when the retry budget for a
-    blocked request is exhausted. Carries how much of the requested date
-    range was actually completed, since the caller may want to report
-    that rather than just failing silently/confusingly.
+    blocked request is exhausted. Carries partial_matches - whatever was
+    already matched before the abort - so a caller doing incremental
+    writes (e.g. to a spreadsheet) can flush that instead of losing it;
+    a caller that doesn't care can just ignore the attribute.
     """
+    def __init__(self, message, partial_matches=None):
+        super().__init__(message)
+        self.partial_matches = partial_matches if partial_matches is not None else []
 
 
 def build_session():
@@ -142,8 +146,8 @@ def fetch_and_filter_applicants(session, county_id, district_id, dates, predicat
                     raise FetchAborted(
                         f"Giving up after {max_retries} retries: still being blocked as of "
                         f"{date_str} ({i} of {len(dates)} days completed before this). "
-                        f"Results are incomplete. Try again later and/or with a larger "
-                        f"--delay-seconds."
+                        f"Try again later and/or with a larger --delay-seconds.",
+                        partial_matches=matched,
                     ) from blocked
                 backoff = (delay_seconds or 1.0) * (2 ** (attempt - 1))
                 print(f"Blocked fetching {date_str} (retry {attempt}/{max_retries}); "

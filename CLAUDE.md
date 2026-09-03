@@ -97,6 +97,14 @@ podman exec -it background-check-app bin/matchApprovalsToSheet.py --days 30 --co
     since resolved-and-rejected rows hold `no`, not blank.
 - `--sheet-id` defaults to the production PTAC sheet; pass a throwaway copy's ID while testing
   changes to this script.
+- By default, results are only written to the sheet once, after every day in `--days` has been
+  fetched from NJDOE — for a large `--days` (e.g. 365, meaning 365 sequential requests), this means
+  no visible progress until the very end, and a bot-protection abort partway through loses
+  everything fetched so far (it only exists in memory until that final write). `--flush-every-days
+  N` writes to the sheet after every N days processed instead, so progress is visible as the run
+  proceeds and an abort only risks losing what's been found since the last flush — confirmed via a
+  simulated abort that whatever was found before it, including the partial chunk in progress, gets
+  flushed before the script exits.
 
 ### One-time Google Cloud setup (manual — needs a browser/Google account, can't be automated)
 1. In Google Cloud Console, enable the **Google Sheets API** for the project (Drive API isn't
