@@ -97,6 +97,12 @@ podman exec -it background-check-app bin/matchApprovalsToSheet.py --days 30 --co
     known nickname pair (e.g. "Andy"/"Andrew" — via the `nicknames` package) rather than an exact
     match. Nickname relationships are inherently ambiguous (a nickname can map to several formal
     names) and aren't inferable from spelling the way typos are, so they're never auto-confirmed.
+    Nickname checking runs for every NJDOE approval against every same-last-name sheet row,
+    regardless of whether that approval *also* exactly matched a different row — e.g. a sheet with
+    both "Andrew Gideon" and "Andy Gideon", and an NJDOE approval for "Andrew Gideon", confirms the
+    "Andrew" row **and** flags the "Andy" row for review, rather than the exact match on one row
+    silently preventing the other from ever being checked (confirmed via a live test this actually
+    happened before this was fixed).
     A reviewer resolves a flagged row by either entering the date in Status themselves (confirmed —
     do this, don't just clear Review) or typing `no` in Review (rejected). Either way, once Review
     is non-blank for a row, the script leaves that cell alone on future runs — a human owns it until

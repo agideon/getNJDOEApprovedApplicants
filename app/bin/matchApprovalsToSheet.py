@@ -271,7 +271,6 @@ def main() -> None:
         this run, however many there are).
         """
         # Pass 1: exact (strictly-normalized) name matches.
-        unmatched = []
         for applicant in applicants:
             strict_key = (strict_normalize_name(applicant['firstname']), strict_normalize_name(applicant['lastname']))
             exact_rows = by_strict_key.get(strict_key, [])
@@ -283,14 +282,19 @@ def main() -> None:
                         f"\"{applicant['firstname']} {applicant['lastname']}\" — "
                         f"{applicant['jobposition']} approved {njdoe.clean_field(applicant, 'approvaldate2')}")
                 review_candidates.extend((row_num, note) for row_num in exact_rows)
-            else:
-                unmatched.append(applicant)
 
-        # Pass 2: nickname-based candidates, only among applicants with no
-        # exact match at all (run after pass 1 completes so a row already
-        # exactly matched via a different applicant this batch is correctly
-        # excluded below, regardless of iteration order).
-        for applicant in unmatched:
+        # Pass 2: nickname-based candidates. Checks every applicant (not
+        # just ones with zero exact match anywhere) against every
+        # same-last-name sheet row, because an applicant exactly matching
+        # ONE row (e.g. NJDOE's "Andrew Gideon" exactly matching a sheet
+        # row for "Andrew Gideon") doesn't mean a DIFFERENT sheet row with
+        # a nickname of that same name (e.g. "Andy Gideon") shouldn't
+        # still be flagged for review - these are two distinct rows/
+        # people as far as the sheet is concerned. The `person['row_num']
+        # in exact_matches_by_row` check below already prevents a row
+        # that's getting a confirmed exact match from also being flagged,
+        # so this doesn't create redundant flags on already-confirmed rows.
+        for applicant in applicants:
             last_key = strict_normalize_name(applicant['lastname'])
             for person in by_strict_last.get(last_key, []):
                 if person['row_num'] in exact_matches_by_row:
